@@ -1,4 +1,4 @@
-# ME4250-Baymax
+# ME4250-Pepe el pollo
 Proyecto de Mini Robot Auto-Balancín realizado en el departamento de ingeniería mecánica de la universidad de chile
 
 
