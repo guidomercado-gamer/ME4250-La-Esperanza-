@@ -1,7 +1,5 @@
-#include <Wire.h>
-
 // ═══════════════════════════════════════════════════════════
-// 1. PINES DE MOTORES (Basado en tu hardware)
+// PINES DE MOTORES (Basado en tu hardware)
 // ═══════════════════════════════════════════════════════════
 const int ENA_IZQ = 5;    // PWM velocidad izquierda
 const int IN1_IZQ = 7;    // Dirección 1 izquierda
@@ -12,206 +10,145 @@ const int IN3_DER = 4;    // Dirección 1 derecha
 const int IN4_DER = 3;    // Dirección 2 derecha
 
 // ═══════════════════════════════════════════════════════════
-// 2. PARÁMETROS DE CONTROL Y FILTRO
+// PARÁMETROS DE LOS MOTORES TT (1:48)
 // ═══════════════════════════════════════════════════════════
-const unsigned long LOOP_DT_MS = 10; // Lazo a 100Hz
-const float COMP_ALPHA = 0.98;       // CORREGIDO: 98% giroscopio, 2% acelerómetro
-
-// Ganancias iniciales (sintonizables en vivo)
-float Kp = 35.0;
-float Ki = 0.0;     // Empezamos en 0 para sintonizar
-float Kd = 0.5;
-float setpoint = 0.0; // Cambiará según tu centro de masa
-
-const float INTEGRAL_LIMIT = 100.0;
-const float INTEGRAL_ACTIVE_BAND = 5.0; 
-const float INTEGRAL_RESET_ANGLE = 5.0; 
-const float MAX_ANGLE = 25.0;
-const float ANGLE_DEADBAND = 0.2; 
-
-const int ZONA_MUERTA = 40;  // Fricción motores TT
-const int PWM_MIN = 50;
-const int PWM_MAX = 255;
-
-// ═══════════════════════════════════════════════════════════
-// 3. VARIABLES DE ESTADO Y HARDWARE
-// ═══════════════════════════════════════════════════════════
-const int MPU_ADDR = 0x68;
-const float GYRO_SENS = 131.0;
-
-int16_t ax, ay, az, gx, gy, gz;
-float gx_offset = 0, gy_offset = 0, gz_offset = 0;
-float pitch = 0.0, gyroPitchRate = 0.0, integral = 0.0, errorPrev = 0.0;
-unsigned long lastTime, nextLoop = 0;
-float dt;
+const int ZONA_MUERTA = 40;  // PWM mínimo donde el motor hace ruido pero no gira
+const int PWM_MIN = 50;      // Potencia mínima para empezar a rodar
+const int PWM_MAX = 255;     // Máxima potencia
+int velocidadPrueba = 150;   // Velocidad estándar para la prueba motriz
 
 // ═══════════════════════════════════════════════════════════
 // SETUP
 // ═══════════════════════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
-  
-  // Motores
+
+  // Configuración de pines de salida para los motores
   pinMode(ENA_IZQ, OUTPUT); pinMode(IN1_IZQ, OUTPUT); pinMode(IN2_IZQ, OUTPUT); 
   pinMode(ENB_DER, OUTPUT); pinMode(IN3_DER, OUTPUT); pinMode(IN4_DER, OUTPUT); 
-  stopMotors();
 
-  setupMPU();
+  // Iniciar apagado por seguridad
+  Detener(); 
 
-  Serial.println(F("Calibrando MPU6050... NO MUEVAS EL ROBOT."));
-  delay(1500);
-  calibrateGyro();
-  Serial.println(F("Calibracion completa."));
-  
-  readMPU6050();
-  pitch = computeAccelPitch();
-  errorPrev = setpoint - pitch;
-
-  imprimirMenu();
-
-  lastTime = millis();
-  nextLoop = millis() + LOOP_DT_MS;
+  Serial.println(F("\n================================="));
+  Serial.println(F("  AVANCE 1: TEST MOTRIZ DIFERENCIAL"));
+  Serial.println(F("================================="));
+  Serial.println(F("Asegurate de tener alimentacion en el Puente H (bateria externa)."));
+  Serial.println(F("Comandos (Escribe y presiona Enter):"));
+  Serial.println(F("  W -> Adelante"));
+  Serial.println(F("  S -> Atras"));
+  Serial.println(F("  A -> Giro sobre el eje (Izquierda)"));
+  Serial.println(F("  D -> Giro sobre el eje (Derecha)"));
+  Serial.println(F("  X -> Detener"));
+  Serial.println(F("  + -> Aumentar velocidad prueba (+10)"));
+  Serial.println(F("  - -> Disminuir velocidad prueba (-10)"));
+  Serial.println(F("=================================\n"));
 }
 
 // ═══════════════════════════════════════════════════════════
-// LOOP PRINCIPAL
+// LOOP PRINCIPAL (Escuchando Comandos)
 // ═══════════════════════════════════════════════════════════
 void loop() {
-  verificarComandosSerial(); // Revisa si hay ajustes en vivo
-
-  if (millis() < nextLoop) return;
-  nextLoop += LOOP_DT_MS;
-
-  readMPU6050();
-  unsigned long now = millis();
-  dt = (now - lastTime) / 1000.0;
-  lastTime = now;
-
-  updatePitch();
-
-  // Corte de seguridad por caída inminente
-  if (abs(pitch) > MAX_ANGLE) {
-    stopMotors();
-    integral = 0;
-    errorPrev = setpoint - pitch;
-    return;
-  }
-
-  // Anti-Windup en ángulos críticos
-  if (abs(pitch) > INTEGRAL_RESET_ANGLE) integral = 0;
-
-  float error = setpoint - pitch;
-
-  // Zona muerta angular
-  if (abs(error) < ANGLE_DEADBAND) {
-    stopMotors();
-    errorPrev = error;
-    return;
-  }
-
-  float output = computePID(error);
-  applyMotors(output);
-}
-
-// ═══════════════════════════════════════════════════════════
-// FUNCIONES DE CONTROL (PID y MOTORES)
-// ═══════════════════════════════════════════════════════════
-float computePID(float error) {
-  if (abs(error) < INTEGRAL_ACTIVE_BAND) {
-    integral += error * dt;
-    integral = constrain(integral, -INTEGRAL_LIMIT, INTEGRAL_LIMIT);
-  }
-  float derivative = (error - errorPrev) / dt;
-  errorPrev = error;
-  return (Kp * error) + (Ki * integral) + (Kd * derivative);
-}
-
-int calcularPWM(float output) {
-  int p = abs((int)output);
-  if (p == 0) return 0;
-  int mapeado = map(p, 0, PWM_MAX, ZONA_MUERTA, PWM_MAX); 
-  return constrain(mapeado, ZONA_MUERTA, PWM_MAX);
-}
-
-void applyMotors(float output) {
-  int pwm = calcularPWM(output);
-  
-  // output positivo = inclinado hacia adelante = robot debe avanzar
-  if (output > 0) { 
-    digitalWrite(IN1_IZQ, HIGH); digitalWrite(IN2_IZQ, LOW);
-    digitalWrite(IN3_DER, HIGH); digitalWrite(IN4_DER, LOW);
-  } else {
-    digitalWrite(IN1_IZQ, LOW); digitalWrite(IN2_IZQ, HIGH);
-    digitalWrite(IN3_DER, LOW); digitalWrite(IN4_DER, HIGH);
-  }
-  analogWrite(ENA_IZQ, pwm);
-  analogWrite(ENB_DER, pwm);
-}
-
-void stopMotors() {
-  digitalWrite(IN1_IZQ, LOW); digitalWrite(IN2_IZQ, LOW); analogWrite(ENA_IZQ, 0); 
-  digitalWrite(IN3_DER, LOW); digitalWrite(IN4_DER, LOW); analogWrite(ENB_DER, 0); 
-}
-
-// ═══════════════════════════════════════════════════════════
-// FUNCIONES MPU6050 Y SINTONIZACIÓN SERIAL
-// ═══════════════════════════════════════════════════════════
-void setupMPU() {
-  Wire.begin();
-  Wire.setClock(400000);
-  Wire.beginTransmission(MPU_ADDR); Wire.write(0x6B); Wire.write(0); Wire.endTransmission(true);
-  Wire.beginTransmission(MPU_ADDR); Wire.write(0x1A); Wire.write(0x03); Wire.endTransmission(true); // DLPF
-}
-
-void readMPU6050() {
-  Wire.beginTransmission(MPU_ADDR); Wire.write(0x3B); Wire.endTransmission(false);
-  Wire.requestFrom(MPU_ADDR, 14, true);
-  ax = Wire.read() << 8 | Wire.read(); ay = Wire.read() << 8 | Wire.read(); az = Wire.read() << 8 | Wire.read();
-  Wire.read(); Wire.read();
-  gx = Wire.read() << 8 | Wire.read(); gy = Wire.read() << 8 | Wire.read(); gz = Wire.read() << 8 | Wire.read();
-}
-
-void calibrateGyro() {
-  long sumX = 0, sumY = 0, sumZ = 0;
-  for (int i = 0; i < 3000; i++) { readMPU6050(); sumX += gx; sumY += gy; sumZ += gz; delay(2); }
-  gx_offset = (float)sumX / 3000.0; gy_offset = (float)sumY / 3000.0; gz_offset = (float)sumZ / 3000.0;
-}
-
-float computeAccelPitch() {
-  float denom = sqrt((float)ay * (float)ay + (float)az * (float)az);
-  if (denom < 0.0001) denom = 0.0001;
-  return atan2(-(float)ax, denom) * 180.0 / PI;
-}
-
-void updatePitch() {
-  gyroPitchRate = ((float)gy - gy_offset) / GYRO_SENS;
-  float accelPitch = computeAccelPitch();
-  pitch = COMP_ALPHA * (pitch + gyroPitchRate * dt) + (1.0 - COMP_ALPHA) * accelPitch;
-}
-
-void imprimirMenu() {
-  Serial.println(F("\n--- SINTONIZACION PID EN VIVO ---"));
-  Serial.println(F("Usa estas letras en el monitor (mayuscula sube, minuscula baja):"));
-  Serial.println(F("P/p -> Ajustar Kp  |  I/i -> Ajustar Ki"));
-  Serial.println(F("D/d -> Ajustar Kd  |  S/s -> Ajustar Setpoint"));
-  Serial.println(F("V -> Ver valores actuales y Pitch\n"));
-}
-
-void verificarComandosSerial() {
   if (Serial.available() > 0) {
-    char c = Serial.read();
-    switch (c) {
-      case 'P': Kp += 1.0; break; case 'p': Kp -= 1.0; break;
-      case 'I': Ki += 0.5; break; case 'i': Ki -= 0.5; break;
-      case 'D': Kd += 0.1; break; case 'd': Kd -= 0.1; break;
-      case 'S': setpoint += 0.5; break; case 's': setpoint -= 0.5; break;
-      case 'V': case 'v':
-        Serial.print(F("Pitch actual: ")); Serial.print(pitch);
-        Serial.print(F(" | Setpoint: ")); Serial.print(setpoint);
-        Serial.print(F(" | Kp: ")); Serial.print(Kp);
-        Serial.print(F(" | Ki: ")); Serial.print(Ki);
-        Serial.print(F(" | Kd: ")); Serial.println(Kd);
+    char comando = Serial.read();
+    comando = toupper(comando); // Convertir a mayúscula para ser robustos a errores de tipeo
+
+    switch (comando) {
+      case 'W':
+        Adelante(velocidadPrueba);
+        Serial.print(F("Moviendo: ADELANTE | Velocidad: ")); Serial.println(velocidadPrueba);
+        break;
+      case 'S':
+        Atras(velocidadPrueba);
+        Serial.print(F("Moviendo: ATRAS    | Velocidad: ")); Serial.println(velocidadPrueba);
+        break;
+      case 'A':
+        GiroIzquierda(velocidadPrueba);
+        Serial.print(F("Moviendo: IZQ (Giro sobre eje) | Vel: ")); Serial.println(velocidadPrueba);
+        break;
+      case 'D':
+        GiroDerecha(velocidadPrueba);
+        Serial.print(F("Moviendo: DER (Giro sobre eje) | Vel: ")); Serial.println(velocidadPrueba);
+        break;
+      case 'X':
+        Detener();
+        Serial.println(F("Moviendo: DETENIDO"));
+        break;
+      case '+':
+        velocidadPrueba += 10;
+        if (velocidadPrueba > PWM_MAX) velocidadPrueba = PWM_MAX;
+        Serial.print(F("Velocidad de prueba ajustada a: ")); Serial.println(velocidadPrueba);
+        break;
+      case '-':
+        velocidadPrueba -= 10;
+        if (velocidadPrueba < PWM_MIN) velocidadPrueba = PWM_MIN;
+        Serial.print(F("Velocidad de prueba ajustada a: ")); Serial.println(velocidadPrueba);
         break;
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+// FUNCIONES BASE DE CONTROL DE MOTORES
+// ═══════════════════════════════════════════════════════════
+int calcularPWM(int potencia) {
+  int p = abs(potencia);
+  if (p < ZONA_MUERTA) return 0; // Si el comando es tan bajo que no vence la fricción, se apaga.
+  
+  // Si pedimos una potencia de 100, la mapea para que asuma que el rango real empieza en la zona muerta
+  int mapeado = map(p, ZONA_MUERTA, PWM_MAX, PWM_MIN, PWM_MAX); 
+  return constrain(mapeado, 0, PWM_MAX);
+}
+
+void setMotorIzquierdo(int potencia) {
+  int pwm = calcularPWM(potencia);
+  if (potencia > 0) {
+    digitalWrite(IN1_IZQ, HIGH); digitalWrite(IN2_IZQ, LOW);
+  } else if (potencia < 0) {
+    digitalWrite(IN1_IZQ, LOW); digitalWrite(IN2_IZQ, HIGH);
+  } else {
+    digitalWrite(IN1_IZQ, LOW); digitalWrite(IN2_IZQ, LOW);
+  }
+  analogWrite(ENA_IZQ, pwm);
+}
+
+void setMotorDerecho(int potencia) {
+  int pwm = calcularPWM(potencia);
+  if (potencia > 0) {
+    digitalWrite(IN3_DER, HIGH); digitalWrite(IN4_DER, LOW);
+  } else if (potencia < 0) {
+    digitalWrite(IN3_DER, LOW); digitalWrite(IN4_DER, HIGH);
+  } else {
+    digitalWrite(IN3_DER, LOW); digitalWrite(IN4_DER, LOW);
+  }
+  analogWrite(ENB_DER, pwm);
+}
+
+// ═══════════════════════════════════════════════════════════
+// FUNCIONES CINEMÁTICAS (Dirección)
+// ═══════════════════════════════════════════════════════════
+void Adelante(int vel) { 
+  setMotorIzquierdo(vel); 
+  setMotorDerecho(vel); 
+}
+
+void Atras(int vel) { 
+  setMotorIzquierdo(-vel); 
+  setMotorDerecho(-vel); 
+}
+
+// Giros sobre su propio eje (una rueda adelante, otra atrás)
+void GiroIzquierda(int vel) { 
+  setMotorIzquierdo(-vel); 
+  setMotorDerecho(vel); 
+}
+
+void GiroDerecha(int vel) { 
+  setMotorIzquierdo(vel); 
+  setMotorDerecho(-vel); 
+}
+
+void Detener() { 
+  setMotorIzquierdo(0); 
+  setMotorDerecho(0); 
 }
