@@ -1,5 +1,9 @@
-const int ENA_IZQ = 5, IN1_IZQ = 7, IN2_IZQ = 6;
-const int ENB_DER = 11, IN3_DER = 4, IN4_DER = 3;
+const int ENA_IZQ = 5;
+const int IN1_IZQ = 7; 
+const int IN2_IZQ = 6;
+const int ENB_DER = 11; 
+const int IN3_DER = 4; 
+IN4_DER = 3;
 
 const int VEL = 150;
 
@@ -10,7 +14,7 @@ void motores(int izq, int der) {
   analogWrite(ENB_DER, abs(der));
 }
 
-// NUEVO: acelera suavemente desde 0 hasta la velocidad pedida
+// aceleracion
 void acelerar(int izq, int der) {
   for (int i = 0; i <= 10; i++) {
     motores(izq * i / 10, der * i / 10);
@@ -18,7 +22,7 @@ void acelerar(int izq, int der) {
   }
 }
 
-// NUEVO: frena suavemente hasta detenerse
+// frena suavemente hasta detenerse
 void frenar(int izq, int der) {
   for (int i = 10; i >= 0; i--) {
     motores(izq * i / 10, der * i / 10);
@@ -35,27 +39,22 @@ void setup() {
 }
 
 void loop() {
-  // 1. Recto con aceleración suave
   acelerar(VEL, VEL);
   delay(1500);
   frenar(VEL, VEL);
 
-  // 2. Curva a la derecha (rueda izquierda rápida, derecha lenta)
   acelerar(VEL, VEL / 3);
   delay(2000);
   frenar(VEL, VEL / 3);
 
-  // 3. Curva a la izquierda
   acelerar(VEL / 3, VEL);
   delay(2000);
   frenar(VEL / 3, VEL);
 
-  // 4. Giro sobre su eje
   acelerar(-VEL, VEL);
   delay(1000);
   frenar(-VEL, VEL);
 
-  // 5. Zigzag: curvas alternadas cortas
   for (int i = 0; i < 3; i++) {
     motores(VEL, VEL / 3);  delay(600);
     motores(VEL / 3, VEL);  delay(600);
