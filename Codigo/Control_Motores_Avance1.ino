@@ -1,14 +1,15 @@
-//motor  A
+// motor  A
 const int ENA_IZQ = 5; 
 const int IN1_IZQ = 7;
 const int IN2_IZQ = 6;
+// motor B
 const int ENB_DER = 11; 
 const int IN3_DER = 4; 
 const int IN4_DER = 3;
 
-const int VEL = 150;  // si no arranca, sube a 180-200
+const int VEL = 150;  // Velocidad
 
-void motores(int izq, int der) {
+void motores(int izq, int der) {  //definicion de movimientos
   digitalWrite(IN1_IZQ, izq > 0); 
   digitalWrite(IN2_IZQ, izq < 0);
   digitalWrite(IN3_DER, der > 0); 
@@ -17,7 +18,7 @@ void motores(int izq, int der) {
   analogWrite(ENB_DER, abs(der));
 }
 
-void setup() {
+void setup() { //configuracion pines como salida
   pinMode(ENA_IZQ, OUTPUT); 
   pinMode(IN1_IZQ, OUTPUT); 
   pinMode(IN2_IZQ, OUTPUT);
@@ -25,10 +26,10 @@ void setup() {
   pinMode(IN3_DER, OUTPUT); 
   pinMode(IN4_DER, OUTPUT);
   motores(0, 0);
-  delay(3000);  // tiempo para soltar el robot antes de que arranque
+  delay(3000);  // 
 }
 
-void loop() {
+void loop() {     //loop de movimiento ejemplo
   motores(VEL, VEL);   delay(2000);  // adelante
   motores(0, 0);       delay(500);
   motores(-VEL, -VEL); delay(2000);  // atrás
