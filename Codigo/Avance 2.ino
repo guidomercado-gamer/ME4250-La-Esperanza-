@@ -91,34 +91,22 @@ void loop() {
 
   unsigned long now = millis();
   dt = (now - lastTime) / 1000.0;
-  lastTime = now;
-
-  
+  lastTime = now; 
   float gyroZ = (gz - gz_offset) / 131.0;
   yaw += gyroZ * dt;
-
   // Roll y pitch con el acelerometro
   float ax_f = (float)ax;
   float ay_f = (float)ay;
   float az_f = (float)az;
-
   float denominator = sqrt(ay_f * ay_f + az_f * az_f);
   if (denominator < 0.0001) denominator = 0.0001;
-
   roll = atan2(ay_f, az_f) * 180.0 / PI;
   pitchAcel = atan2(-ax_f, denominator) * 180.0 / PI;
-
-  
   float gyroY = (gy - gy_offset) / 131.0;
-
-  
   pitch = 0.98 * (pitch + gyroY * dt) + 0.02 * pitchAcel;
-
-  
   float error = pitch - puntoEquilibrio;
-
   if (error > zonaMuerta) {
-    motores(VEL, VEL);             
+    motores(VEL, VEL);
   }
   else if (error < -zonaMuerta) {
     motores(-VEL, -VEL);           
